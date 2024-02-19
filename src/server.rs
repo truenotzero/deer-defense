@@ -1,4 +1,3 @@
-
 // Server
 // Hosts a game and allows clients to conenct
 // The most basic functions the server should supply
@@ -6,5 +5,5 @@
 /* | INBOUND                     | OUTBOUND
 -------------------------------------------
  1 | packets -> logic            | logic -> packets
- 2 | logic -> simulate world     | 
+ 2 | logic -> simulate world     |
 */

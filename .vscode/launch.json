@@ -12,14 +12,14 @@
                 "args": [
                     "build",
                     "--bin=deer-defense",
-                    "--package=deer-defense"
+                    "--package=deer-defense",
                 ],
                 "filter": {
                     "name": "deer-defense",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["server"],
             "cwd": "${workspaceFolder}"
         },
         {

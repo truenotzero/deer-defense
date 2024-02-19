@@ -1,4 +1,3 @@
-
 // Client
 // Connects to a given server
 // The most basic functions the client should supply
@@ -10,8 +9,4 @@
  3 | logic -> audiovisual output |
 */
 
-struct Client {
-
-}
-
-
+struct Client {}

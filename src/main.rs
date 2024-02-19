@@ -1,17 +1,31 @@
+use std::env;
+use std::io;
+use std::io::stdin;
+use std::io::stdout;
+use std::io::Write;
+use std::net::Ipv4Addr;
+use std::net::SocketAddr;
+use std::net::SocketAddrV4;
+use std::net::UdpSocket;
+use std::thread;
+use std::thread::sleep;
+use std::time::Duration;
+
 use engine_2d::ecs;
 use engine_2d::render;
 
-
 extern crate engine_2d;
+use engine_2d::render::window as glfw;
 use engine_2d::render::window::Action;
 use engine_2d::render::window::Context;
 use engine_2d::render::window::Key;
-use engine_2d::render::window as glfw;
+use socket::OpCode;
+use socket::Packet;
 
-mod comp;
 mod client;
-mod server;
 mod common;
+mod comp;
+mod server;
 mod socket;
 
 struct Engine {
@@ -33,10 +47,16 @@ impl Default for Engine {
 
         // hints
 
-
         // actual creation
         let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
-        let (mut handle, event_queue) = glfw.create_window(default_width, default_height, default_title, glfw::WindowMode::Windowed).unwrap();
+        let (mut handle, event_queue) = glfw
+            .create_window(
+                default_width,
+                default_height,
+                default_title,
+                glfw::WindowMode::Windowed,
+            )
+            .unwrap();
 
         // window configuration
         handle.set_key_polling(true);
@@ -53,7 +73,6 @@ impl Default for Engine {
             entity_man: Default::default(),
         }
     }
-
 }
 
 impl Engine {
@@ -63,10 +82,11 @@ impl Engine {
             self.glfw.poll_events();
             for (_, event) in glfw::flush_messages(&self.event_queue) {
                 match event {
-                    glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => self.handle.set_should_close(true),
+                    glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                        self.handle.set_should_close(true)
+                    }
                     _ => (),
                 }
-
             }
 
             self.tick();
@@ -78,16 +98,116 @@ impl Engine {
         }
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self) {}
 
+    fn render(&mut self) {}
+}
+
+const DEFAULT_ADDRESS: (Ipv4Addr, u16) = (Ipv4Addr::UNSPECIFIED, 0);
+
+// fn client() {
+//     let udp = UdpSocket::bind(DEFAULT_ADDRESS).unwrap();
+//     let remote_addr = Ipv4Addr::LOCALHOST;
+//     let remote_port = 7777;
+//     udp.connect((remote_addr, remote_port)).unwrap();
+//     loop {
+//         print!("> ");
+//         stdout().flush().unwrap();
+
+//         let mut buf = String::new();
+//         stdin().read_line(&mut buf).unwrap();
+//         // udp.send_to(buf.as_bytes(), remote).unwrap();
+//         udp.send(buf.as_bytes()).unwrap();
+
+//         let mut port_buf = [0; 2];
+//         let (_, addy) = udp.recv_from(&mut port_buf).unwrap();
+//         println!("Got a message from {addy}");
+
+//         let private_port = u16::from_ne_bytes(port_buf);
+//         udp.connect((remote_addr, private_port)).unwrap();
+//         println!("Connected to private port {private_port}");
+
+//         let mut bbuf = vec![0; 256];
+//         udp.recv(&mut bbuf).unwrap();
+//         let inbound = String::from_utf8(bbuf).unwrap();
+//         println!("< {inbound}");
+//     }
+// }
+
+// fn server() {
+//     let udp = UdpSocket::bind("0.0.0.0:7777").unwrap();
+//     loop {
+//         let mut buf = vec![0; 256];
+//         let (len, addy) = udp.recv_from(&mut buf).unwrap();
+//         println!("Got a message from {addy}");
+
+//         let client = UdpSocket::bind(DEFAULT_ADDRESS).unwrap();
+//         let port = client.local_addr().unwrap().port();
+//         udp.send_to(&port.to_ne_bytes(), addy).unwrap();
+
+//         // empirical value
+//         // prevents a bug where the next data is received before
+//         // the client can reconnect
+//         sleep(Duration::from_micros(10));
+//         client.connect(addy).unwrap();
+//         client.send(&buf[..len]).unwrap();
+
+//         // udp.send_to(&buf, addy).unwrap();
+
+//         let inbound = String::from_utf8(buf).unwrap();
+//         println!("= {inbound}");
+//     }
+// }
+
+fn client() {
+    let client = socket::Client::new().unwrap();
+    client.connect("127.0.0.1:7777").unwrap();
+    loop {
+        print!("> ");
+        stdout().flush().unwrap();
+
+        let mut user_input = String::new();
+        stdin().read_line(&mut user_input).unwrap();
+
+        Packet::new(OpCode::UserDefined, user_input).send_to(&client, None).unwrap();
+        let (pong, _) = Packet::recv_from(&client).unwrap();
+        let pong_string = String::from_utf8(pong.into()).unwrap();
+        println!("< {pong_string}");
     }
+}
 
-    fn render(&mut self) {
+fn server() {
+    let server = socket::Server::listen(7777).unwrap();
+    loop {
+        let client = server.accept().unwrap();
+        thread::spawn(move || {
+            loop {
+                let (ping, _) = Packet::recv_from(&client).unwrap();
+                if OpCode::UserDefined != ping.opcode() {
+                    println!("bad data, closing connection with client");
+                    break;
+                }
 
+                let data = ping.clone().into();
+                let data_str = String::from_utf8(data).unwrap();
+                println!("= {data_str}");
+
+                ping.send_to(&client, None).unwrap();
+            }
+        });
     }
 }
 
 fn main() {
-    let window = Engine::default();
-    window.run();
+    //let window = Engine::default();
+    //window.run();
+
+    let err = "provide `client` or `server`";
+    let args = env::args().collect::<Vec<_>>();
+    let arg = args.get(1).expect(err);
+    match arg.as_str() {
+        "client" => client(),
+        "server" => server(),
+        e => panic!("{err}, got `{e}`"),
+    }
 }
