@@ -1,43 +1,89 @@
-use std::convert::Infallible;
+#![feature(more_qualified_paths)]
+
+use std::cell::RefCell;
 use std::env;
-use std::io;
-use std::io::stdin;
-use std::io::stdout;
-use std::io::Write;
 use std::net::Ipv4Addr;
-use std::net::SocketAddr;
-use std::net::SocketAddrV4;
-use std::net::UdpSocket;
+use std::path::Path;
 use std::thread;
-use std::thread::sleep;
-use std::time::Duration;
 
 use engine_2d::ecs;
+use engine_2d::ecs::Entity;
+use engine_2d::ecs::EntityManager;
 use engine_2d::render;
 
 extern crate engine_2d;
+use engine_2d::render::shader::IShaderBuilder;
+use engine_2d::render::shader::PartType;
+use engine_2d::render::shader::Shader;
+use engine_2d::render::shader::ShaderBuilder;
+use engine_2d::render::shader::ShaderPart;
+use engine_2d::render::sprite::ISprite;
+use engine_2d::render::sprite::Sprite;
+use engine_2d::render::texture::ITexture;
+use engine_2d::render::texture::Texture;
 use engine_2d::render::window as glfw;
 use engine_2d::render::window::Action;
 use engine_2d::render::window::Context;
 use engine_2d::render::window::Key;
-use socket::NoData;
-use socket::OpCode;
-use socket::Packet;
+use engine_2d::shader;
+use entity::archetypes::mob;
+use entity::systems;
+use socket::Client;
 
 mod client;
 mod common;
-mod comp;
+mod entity;
+mod event;
 mod server;
 mod socket;
+
+fn make_shader() -> Shader {
+    ShaderBuilder::default()
+        .add_part(shader! {
+            #type Vertex
+            "#version 450 core
+
+            uniform mat3 uSprite;
+
+            layout (location = 0)
+            in vec2 aPos;
+
+            layout (location = 1)
+            in vec2 aUV;
+
+            out vec2 texUV;
+
+            void main() {
+                vec3 pos = vec3(aPos, 1.0);
+                texUV = aUV;
+                gl_Position = vec4(uSprite * pos, 1.0);
+            }"
+        })
+        .unwrap()
+        .add_part(shader! {
+            #type Fragment
+            "#version 450 core
+            
+            uniform sampler2D uTexture;
+
+            in vec2 texUV;
+
+            out vec4 FragColor;
+
+            void main() {
+                FragColor = texture(uTexture, texUV);
+            }"
+        })
+        .unwrap()
+        .verify()
+        .unwrap()
+}
 
 struct Engine {
     // windowing
     glfw: glfw::Glfw,
     handle: glfw::PWindow,
     event_queue: glfw::GlfwReceiver<(f64, glfw::WindowEvent)>,
-
-    // ecs
-    entity_man: ecs::EntityManager<'static>,
 }
 
 impl Default for Engine {
@@ -71,14 +117,22 @@ impl Default for Engine {
             glfw,
             handle,
             event_queue,
-
-            entity_man: Default::default(),
         }
     }
 }
 
 impl Engine {
     fn run(mut self) {
+        let mut entity_man = EntityManager::default();
+        let player = entity_man.spawn();
+        let player_texture = Texture::from_file(Path::new("deer.png")).unwrap();
+        let mut player_sprite = Sprite::default();
+        player_sprite.set_texture(player_texture);
+        mob::new(&player, (0.0, 0.0).into(), 0.1, 0.01, player_sprite);
+
+        systems::register_event_adapters();
+
+        let shader = make_shader();
         while !self.handle.should_close() {
             // update logic
             self.glfw.poll_events();
@@ -95,165 +149,42 @@ impl Engine {
 
             // draw logic
             render::clear();
-            self.render();
+            self.render(&shader);
             self.handle.swap_buffers();
         }
     }
 
-    fn tick(&mut self) {}
+    fn tick(&mut self) {
+        systems::input(&self.handle);
+        systems::movement();
+    }
 
-    fn render(&mut self) {}
-}
-
-const DEFAULT_ADDRESS: (Ipv4Addr, u16) = (Ipv4Addr::UNSPECIFIED, 0);
-
-// fn client() {
-//     let udp = UdpSocket::bind(DEFAULT_ADDRESS).unwrap();
-//     let remote_addr = Ipv4Addr::LOCALHOST;
-//     let remote_port = 7777;
-//     udp.connect((remote_addr, remote_port)).unwrap();
-//     loop {
-//         print!("> ");
-//         stdout().flush().unwrap();
-
-//         let mut buf = String::new();
-//         stdin().read_line(&mut buf).unwrap();
-//         // udp.send_to(buf.as_bytes(), remote).unwrap();
-//         udp.send(buf.as_bytes()).unwrap();
-
-//         let mut port_buf = [0; 2];
-//         let (_, addy) = udp.recv_from(&mut port_buf).unwrap();
-//         println!("Got a message from {addy}");
-
-//         let private_port = u16::from_ne_bytes(port_buf);
-//         udp.connect((remote_addr, private_port)).unwrap();
-//         println!("Connected to private port {private_port}");
-
-//         let mut bbuf = vec![0; 256];
-//         udp.recv(&mut bbuf).unwrap();
-//         let inbound = String::from_utf8(bbuf).unwrap();
-//         println!("< {inbound}");
-//     }
-// }
-
-// fn server() {
-//     let udp = UdpSocket::bind("0.0.0.0:7777").unwrap();
-//     loop {
-//         let mut buf = vec![0; 256];
-//         let (len, addy) = udp.recv_from(&mut buf).unwrap();
-//         println!("Got a message from {addy}");
-
-//         let client = UdpSocket::bind(DEFAULT_ADDRESS).unwrap();
-//         let port = client.local_addr().unwrap().port();
-//         udp.send_to(&port.to_ne_bytes(), addy).unwrap();
-
-//         // empirical value
-//         // prevents a bug where the next data is received before
-//         // the client can reconnect
-//         sleep(Duration::from_micros(10));
-//         client.connect(addy).unwrap();
-//         client.send(&buf[..len]).unwrap();
-
-//         // udp.send_to(&buf, addy).unwrap();
-
-//         let inbound = String::from_utf8(buf).unwrap();
-//         println!("= {inbound}");
-//     }
-// }
-
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq)]
-enum MyOpcodes {
-    StringData = socket::OpCode::UserDefined as _,
-}
-
-impl From<MyOpcodes> for u8 {
-    fn from(value: MyOpcodes) -> Self {
-        value as _
+    fn render(&mut self, shader: &Shader) {
+        systems::draw(&shader);
     }
 }
 
-impl From<u8> for MyOpcodes {
-    fn from(value: u8) -> Self {
-        unsafe { std::mem::transmute(value) }
-    }
-}
-
-impl<T: AsRef<str>> From<T> for Packet {
-    fn from(value: T) -> Self {
-        Self::new(MyOpcodes::StringData, value.as_ref())
-    }
-}
-
-impl TryFrom<Packet> for String {
-    type Error = socket::Error;
-    fn try_from(value: Packet) -> socket::Result<Self> {
-        if MyOpcodes::StringData == value.opcode() {
-            Ok(String::from_utf8(value.into()).unwrap())
-        } else {
-            Err(socket::Error::BadOpcode)
-        }
-    }
-}
-
-fn client() {
-    let client = socket::Client::new().unwrap();
-    client.connect("127.0.0.1:7777").unwrap();
+fn server(port: u16) {
+    let socket = socket::Server::listen(port).unwrap();
     loop {
-        print!("> ");
-        stdout().flush().unwrap();
-
-        let mut user_input = String::new();
-        stdin().read_line(&mut user_input).unwrap();
-
-        client.send(user_input).unwrap();
-        let pong: String = client.recv().unwrap();
-        println!("< {pong}");
+        let (p, address): (socket::Packet, _) = socket.recv().unwrap();
+        let op = p.opcode::<u8>();
+        let data = Vec::from(p);
     }
 }
 
-fn server_connectionful() {
-    let mut server = socket::Server::listen(7777).unwrap();
-    loop {
-        let client = server.accept().unwrap();
-        thread::spawn(move || {
-            loop {
-                let ping: Packet = client.recv().unwrap();
-                if OpCode::UserDefined != ping.opcode() {
-                    println!("bad data, closing connection with client");
-                    break;
-                }
-
-                let data = ping.clone().into();
-                let data_str = String::from_utf8(data).unwrap();
-                println!("= {data_str}");
-
-                client.send(ping).unwrap();
-            }
-        });
-    }
-}
-
-fn server_connectionless() {
-    let server = socket::Server::listen(7777).unwrap();
-    loop {
-        let (data, address): (String,_) = server.recv().unwrap();
-        println!("= {data}");
-        server.send(data, address).unwrap();
-    }
+thread_local! {
+    pub static CLIENT: socket::Client = Client::new().unwrap();
 }
 
 fn main() {
-    //let window = Engine::default();
-    //window.run();
-
-    let err = "provide `client` or `server`";
     let args = env::args().collect::<Vec<_>>();
-    let arg = args.get(1).expect(err);
-    match arg.as_str() {
-        "client" => client(),
-        "server" => server_connectionless(),
-        "server-con" => server_connectionful(),
-        e => panic!("{err}, got `{e}`"),
+    if args.len() > 1 && args[1] == "server" {
+        let default_port = 7777;
+        thread::spawn(move || server(default_port));
     }
+
+    CLIENT.with(|c| c.connect((Ipv4Addr::LOCALHOST, 7777)).unwrap());
+    let game = Engine::default();
+    game.run();
 }

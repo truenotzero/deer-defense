@@ -1,11 +1,11 @@
 use std::convert::Infallible;
+use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::net::UdpSocket;
-use std::fmt::Display;
 use std::sync::Arc;
 use std::sync::Weak;
 use std::thread::sleep;
@@ -135,7 +135,10 @@ impl Packet {
         let mut buf = vec![self.opcode];
         buf.extend(self.data.into_iter());
         if let Some(address) = address {
-            socket.send_to(&buf, address).and(Ok(())).map_err(Into::into)
+            socket
+                .send_to(&buf, address)
+                .and(Ok(()))
+                .map_err(Into::into)
         } else {
             socket.send(&buf).and(Ok(())).map_err(Into::into)
         }
@@ -169,10 +172,7 @@ impl Client {
     }
 
     pub fn connect<A: ToSocketAddrs>(&self, address: A) -> Result<()> {
-        let address = address
-            .to_socket_addrs()?
-            .next()
-            .ok_or(Error::BadAddress)?;
+        let address = address.to_socket_addrs()?.next().ok_or(Error::BadAddress)?;
         self.socket.connect(address)?;
         self.send(Packet::new(OpCode::Hello, NoData))?;
         let hello_reply: Packet = self.recv()?;
@@ -187,7 +187,7 @@ impl Client {
         packet.into().send_to(&self.socket, None)
     }
 
-    pub fn recv<E: Into<Error>, P: TryFrom<Packet, Error=E>>(&self) -> Result<P> {
+    pub fn recv<E: Into<Error>, P: TryFrom<Packet, Error = E>>(&self) -> Result<P> {
         loop {
             let (packet, _) = Packet::recv_from(&self.socket)?;
             match packet.opcode() {
@@ -198,7 +198,9 @@ impl Client {
                 }
                 _ => break packet,
             }
-        }.try_into().map_err(Into::into)
+        }
+        .try_into()
+        .map_err(Into::into)
     }
 
     fn set_remote_port(&self, port: u16) -> Result<()> {
@@ -210,7 +212,7 @@ impl Client {
 
 pub struct Server {
     socket: UdpSocket,
-    clients: Vec<Weak<Client>>
+    clients: Vec<Weak<Client>>,
 }
 
 impl Server {
@@ -219,11 +221,11 @@ impl Server {
         Ok(Self {
             socket,
             clients: Default::default(),
-         })
+        })
     }
 
     /// connectionless mode
-    pub fn recv<E: Into<Error>, P: TryFrom<Packet, Error=E>>(&self) -> Result<(P, SocketAddr)> {
+    pub fn recv<E: Into<Error>, P: TryFrom<Packet, Error = E>>(&self) -> Result<(P, SocketAddr)> {
         let (packet, address) = loop {
             let (packet, address) = Packet::recv_from(&self.socket)?;
             match packet.opcode() {
@@ -252,7 +254,8 @@ impl Server {
                 client.socket.connect(address)?;
 
                 let new_port = client.socket.local_addr().unwrap().port();
-                Packet::new(OpCode::Port, &new_port.to_ne_bytes()).send_to(&self.socket, Some(address))?;
+                Packet::new(OpCode::Port, &new_port.to_ne_bytes())
+                    .send_to(&self.socket, Some(address))?;
                 sleep(Duration::from_millis(1));
                 client.send(Packet::new(OpCode::Hello, NoData))?;
 
