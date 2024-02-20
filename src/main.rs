@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::env;
 use std::io;
 use std::io::stdin;
@@ -19,6 +20,7 @@ use engine_2d::render::window as glfw;
 use engine_2d::render::window::Action;
 use engine_2d::render::window::Context;
 use engine_2d::render::window::Key;
+use socket::NoData;
 use socket::OpCode;
 use socket::Packet;
 
@@ -159,6 +161,41 @@ const DEFAULT_ADDRESS: (Ipv4Addr, u16) = (Ipv4Addr::UNSPECIFIED, 0);
 //     }
 // }
 
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq)]
+enum MyOpcodes {
+    StringData = socket::OpCode::UserDefined as _,
+}
+
+impl From<MyOpcodes> for u8 {
+    fn from(value: MyOpcodes) -> Self {
+        value as _
+    }
+}
+
+impl From<u8> for MyOpcodes {
+    fn from(value: u8) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Packet {
+    fn from(value: T) -> Self {
+        Self::new(MyOpcodes::StringData, value.as_ref())
+    }
+}
+
+impl TryFrom<Packet> for String {
+    type Error = socket::Error;
+    fn try_from(value: Packet) -> socket::Result<Self> {
+        if MyOpcodes::StringData == value.opcode() {
+            Ok(String::from_utf8(value.into()).unwrap())
+        } else {
+            Err(socket::Error::BadOpcode)
+        }
+    }
+}
+
 fn client() {
     let client = socket::Client::new().unwrap();
     client.connect("127.0.0.1:7777").unwrap();
@@ -169,20 +206,19 @@ fn client() {
         let mut user_input = String::new();
         stdin().read_line(&mut user_input).unwrap();
 
-        Packet::new(OpCode::UserDefined, user_input).send_to(&client, None).unwrap();
-        let (pong, _) = Packet::recv_from(&client).unwrap();
-        let pong_string = String::from_utf8(pong.into()).unwrap();
-        println!("< {pong_string}");
+        client.send(user_input).unwrap();
+        let pong: String = client.recv().unwrap();
+        println!("< {pong}");
     }
 }
 
-fn server() {
-    let server = socket::Server::listen(7777).unwrap();
+fn server_connectionful() {
+    let mut server = socket::Server::listen(7777).unwrap();
     loop {
         let client = server.accept().unwrap();
         thread::spawn(move || {
             loop {
-                let (ping, _) = Packet::recv_from(&client).unwrap();
+                let ping: Packet = client.recv().unwrap();
                 if OpCode::UserDefined != ping.opcode() {
                     println!("bad data, closing connection with client");
                     break;
@@ -192,9 +228,18 @@ fn server() {
                 let data_str = String::from_utf8(data).unwrap();
                 println!("= {data_str}");
 
-                ping.send_to(&client, None).unwrap();
+                client.send(ping).unwrap();
             }
         });
+    }
+}
+
+fn server_connectionless() {
+    let server = socket::Server::listen(7777).unwrap();
+    loop {
+        let (data, address): (String,_) = server.recv().unwrap();
+        println!("= {data}");
+        server.send(data, address).unwrap();
     }
 }
 
@@ -207,7 +252,8 @@ fn main() {
     let arg = args.get(1).expect(err);
     match arg.as_str() {
         "client" => client(),
-        "server" => server(),
+        "server" => server_connectionless(),
+        "server-con" => server_connectionful(),
         e => panic!("{err}, got `{e}`"),
     }
 }
