@@ -104,7 +104,6 @@ impl From<EntitySpawn> for Packet {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct EntityUpdate {
     pub id: i32,
@@ -155,9 +154,7 @@ impl TryFrom<Packet> for EntityDestroy {
         } else {
             let data = value.data();
             let id = i32::from_be_bytes(data[0..4].try_into().unwrap());
-            Ok(Self {
-                id,
-            })
+            Ok(Self { id })
         }
     }
 }
@@ -172,8 +169,3 @@ impl From<EntityDestroy> for Packet {
         }
     }
 }
-
-
-
-
-

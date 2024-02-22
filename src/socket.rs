@@ -6,8 +6,6 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::net::UdpSocket;
-use std::sync::Arc;
-use std::thread::sleep;
 use std::time::Duration;
 
 const DEFAULT_ADDRESS: (Ipv4Addr, u16) = (Ipv4Addr::UNSPECIFIED, 0);
@@ -243,26 +241,26 @@ impl Server {
         packet.into().send_to(&self.socket, Some(address))
     }
 
-    /// connectionful mode
-    pub fn accept(&mut self) -> Result<Arc<Client>> {
-        loop {
-            let (packet, address) = Packet::recv_from(&self.socket)?;
-            println!("Got some data!");
-            if OpCode::Hello == packet.opcode() {
-                let client = Arc::new(Client::new()?);
-                client.socket.connect(address)?;
+    // connectionful mode
+    // pub fn accept(&mut self) -> Result<Arc<Client>> {
+    //     loop {
+    //         let (packet, address) = Packet::recv_from(&self.socket)?;
+    //         println!("Got some data!");
+    //         if OpCode::Hello == packet.opcode() {
+    //             let client = Arc::new(Client::new()?);
+    //             client.socket.connect(address)?;
 
-                let new_port = client.socket.local_addr().unwrap().port();
-                Packet::new(OpCode::Port, &new_port.to_ne_bytes())
-                    .send_to(&self.socket, Some(address))?;
-                sleep(Duration::from_millis(1));
-                client.send(Packet::new(OpCode::Hello, NoData))?;
+    //             let new_port = client.socket.local_addr().unwrap().port();
+    //             Packet::new(OpCode::Port, &new_port.to_ne_bytes())
+    //                 .send_to(&self.socket, Some(address))?;
+    //             sleep(Duration::from_millis(1));
+    //             client.send(Packet::new(OpCode::Hello, NoData))?;
 
-                println!("new client!");
-                break Ok(client);
-            }
-        }
-    }
+    //             println!("new client!");
+    //             break Ok(client);
+    //         }
+    //     }
+    // }
 
     // pub fn broadcast<P: Into<Packet>>(&mut self, packet: P) -> Result<()> {
     //     let mut removals = Vec::new();

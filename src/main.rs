@@ -20,6 +20,7 @@ use common::TIMEOUT;
 use engine_2d::render;
 
 extern crate engine_2d;
+use engine_2d::math::Vec2;
 use engine_2d::render::shader::IShaderBuilder;
 use engine_2d::render::shader::PartType;
 use engine_2d::render::shader::Shader;
@@ -29,7 +30,6 @@ use engine_2d::render::window as glfw;
 use engine_2d::render::window::Action;
 use engine_2d::render::window::Key;
 use engine_2d::render::Context;
-use engine_2d::math::Vec2;
 use engine_2d::shader;
 use entities::EntityManager;
 use entities::KeyEvent;
@@ -211,7 +211,6 @@ impl<'c> Engine<'c> {
             self.tick(&mut ents, &tx, &prx, dt);
             last = now;
 
-
             // draw logic
             render::clear();
             self.render(&ents, &shader);
@@ -222,7 +221,6 @@ impl<'c> Engine<'c> {
     fn get_key(&self, key: Key) -> bool {
         self.wnd.handle.get_key(key) == Action::Press
     }
-
 
     fn tick(
         &mut self,
@@ -263,24 +261,22 @@ impl<'c> Engine<'c> {
                         let lid = ents.spawn(e.pos, e.scale, e.speed, 0.0, e.dir, sprite, e.kind);
                         self.server_to_local_id.insert(e.id, lid);
                         // println!("Spawning entity ({:?}) sid=[{}], lid=[{}]", e.kind, e.id, lid);
-                    },
+                    }
                     OpCode::EntityUpdate => {
                         let e = EntityUpdate::try_from(p).unwrap();
                         let lid = self.server_to_local_id[&e.id];
                         // ents.set_position(lid, e.pos);
                         let d = e.pos - ents.get(lid).pos();
                         ents.get_mut(lid).set_direction(d);
-                    },
+                    }
                     OpCode::EntityDestroy => {
                         let e = EntityDestroy::try_from(p).unwrap();
                         // println!("client: entity destroy sid=[{}]", e.id);
                         let lid = self.server_to_local_id[&e.id];
                         ents.destroy(lid);
-                    },
-                    _ => (),
+                    } // _ => (),
                 }
             }
-
         }
 
         let w = self.get_key(Key::W);
@@ -297,8 +293,8 @@ impl<'c> Engine<'c> {
         let player_pos = prx.recv().unwrap();
         if send_player_pos {
             let p = EntityUpdate {
-               id: 0,
-               pos: player_pos,
+                id: 0,
+                pos: player_pos,
             };
             self.sock.send(p).unwrap();
         }
@@ -307,7 +303,15 @@ impl<'c> Engine<'c> {
             let up = Vec2::new(0.0, 1.0);
             let scale = 6.0;
             let speed = 30.0;
-            ents.spawn(player_pos, scale, speed, 0.0, up, SpriteName::Spit, EntityKind::PlayerProjectile);
+            ents.spawn(
+                player_pos,
+                scale,
+                speed,
+                0.0,
+                up,
+                SpriteName::Spit,
+                EntityKind::PlayerProjectile,
+            );
             let projectile_spawn = EntitySpawn {
                 id: 0,
                 kind: EntityKind::PlayerProjectile,
@@ -319,7 +323,6 @@ impl<'c> Engine<'c> {
             self.sock.send(projectile_spawn).unwrap();
             self.shot_cooldown.enable();
         }
-
     }
 
     fn render(&self, ents: &EntityManager, shader: &Shader) {
@@ -339,8 +342,6 @@ fn main() {
             ip => client_ip = Ipv4Addr::from_str(ip).expect("Expected IP address"),
         }
     }
-
-
 
     let window = Window::default();
     let sock = Arc::new(socket::Client::new().unwrap());

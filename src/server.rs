@@ -9,7 +9,6 @@
 */
 
 use std::collections::HashMap;
-use std::io;
 use std::io::ErrorKind;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -26,9 +25,9 @@ use rand::thread_rng;
 use rand::Rng;
 
 use crate::common::EntityDestroy;
+use crate::common::EntityKind;
 use crate::common::EntitySpawn;
 use crate::common::EntityUpdate;
-use crate::common::EntityKind;
 use crate::common::OpCode;
 use crate::common::SpriteName;
 use crate::common::TIMEOUT;
@@ -45,14 +44,12 @@ fn broadcast(
     packet: Packet,
     socket: &Server,
     but: Option<SocketAddr>,
-    clients: impl Iterator<Item=SocketAddr>,
+    clients: impl Iterator<Item = SocketAddr>,
 ) {
     let but = but.unwrap_or((Ipv4Addr::UNSPECIFIED, 0).into());
-    clients
-        .filter(|a| a != &but)
-        .for_each(|a| {
-            socket.send(packet.clone(), a).unwrap();
-        })
+    clients.filter(|a| a != &but).for_each(|a| {
+        socket.send(packet.clone(), a).unwrap();
+    })
 }
 
 fn read_packet_and_update_world(
@@ -86,7 +83,7 @@ fn read_packet_and_update_world(
                     // println!("Server: EntitySpawn {:?}", p);
                     socket.send(p, address).unwrap();
                 }
-            },
+            }
         }
 
         if socket::OpCode::Pong == p.opcode() {
@@ -96,7 +93,15 @@ fn read_packet_and_update_world(
             match p.opcode() {
                 OpCode::EntitySpawn => {
                     let mut e = EntitySpawn::try_from(p).unwrap();
-                    let id = ents.spawn(e.pos, e.scale, e.speed, 0.0, e.dir, SpriteName::None, e.kind);
+                    let id = ents.spawn(
+                        e.pos,
+                        e.scale,
+                        e.speed,
+                        0.0,
+                        e.dir,
+                        SpriteName::None,
+                        e.kind,
+                    );
                     e.id = id;
 
                     if e.kind == EntityKind::Player {
@@ -105,7 +110,7 @@ fn read_packet_and_update_world(
                     }
 
                     broadcast(e.into(), &socket, Some(address), clients.keys().copied());
-                },
+                }
                 OpCode::EntityUpdate => {
                     let mut e = EntityUpdate::try_from(p).unwrap();
                     if e.id == 0 {
@@ -114,7 +119,7 @@ fn read_packet_and_update_world(
                         e.id = player_ids[&address];
                     }
                     ents.set_position(e.id, e.pos);
-                    
+
                     broadcast(e.into(), &socket, Some(address), clients.keys().copied());
                 }
                 OpCode::EntityDestroy => {
@@ -126,16 +131,21 @@ fn read_packet_and_update_world(
                         e.id = player_ids[&address];
                     }
                     ents.destroy(e.id);
-                    
+
                     broadcast(e.into(), &socket, Some(address), clients.keys().copied());
                 }
             }
         }
-
     }
 }
 
-fn tick(ents: &mut entities::EntityManager, clients: &mut HashMap<SocketAddr, Timer>, player_ids: &mut HashMap<SocketAddr, i32>, socket: &Server, dt: Duration) {
+fn tick(
+    ents: &mut entities::EntityManager,
+    clients: &mut HashMap<SocketAddr, Timer>,
+    player_ids: &mut HashMap<SocketAddr, i32>,
+    socket: &Server,
+    dt: Duration,
+) {
     let mut purge_list = Vec::new();
     for (address, timer) in clients.iter_mut() {
         if timer.tick(dt) {
@@ -145,12 +155,17 @@ fn tick(ents: &mut entities::EntityManager, clients: &mut HashMap<SocketAddr, Ti
 
     for address in purge_list {
         println!("purging client: {}", address);
-        for (k,v) in player_ids.iter() {
+        for (k, v) in player_ids.iter() {
             println!("player_ids: [{}]=>[{}]", k, v);
         }
         clients.remove(&address);
         if let Some(id) = player_ids.remove(&address) {
-            broadcast(EntityDestroy { id }.into(), &socket, None, clients.keys().copied());
+            broadcast(
+                EntityDestroy { id }.into(),
+                &socket,
+                None,
+                clients.keys().copied(),
+            );
             println!("Purging client [ent={}]- {}", id, address);
         }
     }
@@ -167,7 +182,12 @@ fn tick(ents: &mut entities::EntityManager, clients: &mut HashMap<SocketAddr, Ti
 
     for id in hunter_purge_list {
         ents.destroy(id);
-        broadcast(EntityDestroy{id}.into(), socket, None, clients.keys().copied());
+        broadcast(
+            EntityDestroy { id }.into(),
+            socket,
+            None,
+            clients.keys().copied(),
+        );
     }
 }
 
@@ -192,11 +212,23 @@ fn make_forest(ents: &mut entities::EntityManager) {
         let spread = 12.0;
         let x = rng.gen_range((-spread)..=spread);
         let y = rng.gen_range((-spread)..=spread);
-        ents.spawn(Vec2::new(x,y), 8.0, 0.0, 0.0, Vec2::default(), SpriteName::None, EntityKind::Forest);
+        ents.spawn(
+            Vec2::new(x, y),
+            8.0,
+            0.0,
+            0.0,
+            Vec2::default(),
+            SpriteName::None,
+            EntityKind::Forest,
+        );
     }
 }
 
-fn spawn_hunter(ents: &mut entities::EntityManager, socket: &Server, clients: impl Iterator<Item=SocketAddr>) {
+fn spawn_hunter(
+    ents: &mut entities::EntityManager,
+    socket: &Server,
+    clients: impl Iterator<Item = SocketAddr>,
+) {
     let mut rng = thread_rng();
     let bound = WORLD_SIZE as f32;
     let x = rng.gen_range(-bound..bound);
@@ -249,7 +281,6 @@ pub fn run(port: u16) {
             let ping = Packet::new(socket::OpCode::Ping, NoData);
             // println!("server - ping");
             broadcast(ping, &socket, None, clients.keys().copied());
-
         }
         if hunter_timer.tick(dt) {
             spawn_hunter(&mut ents, &socket, clients.keys().copied());

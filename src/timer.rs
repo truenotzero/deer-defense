@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-
 pub struct Timer {
     accumulator: Duration,
     threshold: Duration,
@@ -42,10 +41,10 @@ impl Cooldown {
         }
     }
 
-    /// reset the cooldown
-    pub fn reset(&mut self) {
-        self.accumulator = Duration::from_secs(0);
-    }
+    // reset the cooldown
+    // pub fn reset(&mut self) {
+    //     self.accumulator = Duration::from_secs(0);
+    // }
 
     /// start the cooldown
     pub fn enable(&mut self) {
@@ -60,4 +59,3 @@ impl Cooldown {
         self.accumulator == Duration::ZERO
     }
 }
-

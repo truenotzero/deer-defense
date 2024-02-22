@@ -1,6 +1,4 @@
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::ops::Not;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
@@ -35,7 +33,7 @@ pub trait Entity {
     fn pos(&self) -> Vec2;
     fn kind(&self) -> EntityKind;
     fn scale(&self) -> f32;
-    fn speed(&self) ->  f32;
+    fn speed(&self) -> f32;
     fn dir(&self) -> Vec2;
 
     fn set_pos(&mut self, pos: Vec2);
@@ -95,7 +93,7 @@ impl<'a> Entity for BaseEntity<'a> {
         self.scale
     }
 
-    fn speed(&self) ->  f32 {
+    fn speed(&self) -> f32 {
         self.speed
     }
 
@@ -164,7 +162,7 @@ impl<'a> Entity for Player<'a> {
         self.base.scale
     }
 
-    fn speed(&self) ->  f32 {
+    fn speed(&self) -> f32 {
         self.base.speed
     }
 
@@ -215,8 +213,11 @@ pub struct EntityManager<'e, 's: 'e> {
 }
 
 impl<'e, 's: 'e> EntityManager<'e, 's> {
-    pub fn iter(&self) -> impl Iterator<Item=(i32, &dyn Entity)> {
-        self.entities.iter().filter(|e| e.1.is_alive()).map(|e| (e.0, e.1.as_ref()))
+    pub fn iter(&self) -> impl Iterator<Item = (i32, &dyn Entity)> {
+        self.entities
+            .iter()
+            .filter(|e| e.1.is_alive())
+            .map(|e| (e.0, e.1.as_ref()))
     }
 
     pub fn load_sprite<'c: 's>(&mut self, ctx: Context<'c>, name: SpriteName, path: &Path) {
@@ -252,7 +253,15 @@ impl<'e, 's: 'e> EntityManager<'e, 's> {
                 let pos = Vec2::new(x as _, y as _);
                 let r = rng.gen_range(0..=4);
                 let rotation = (r as f32) * rot;
-                self.spawn(pos + offset, scale, speed, rotation, dir, sprite, EntityKind::Tile);
+                self.spawn(
+                    pos + offset,
+                    scale,
+                    speed,
+                    rotation,
+                    dir,
+                    sprite,
+                    EntityKind::Tile,
+                );
             }
         }
         // place trees
@@ -272,7 +281,12 @@ impl<'e, 's: 'e> EntityManager<'e, 's> {
         // let slot = self.entities.iter().find(|(eid, _)| *eid == id).unwrap().0;
         // self.entities.remove(slot as _);
 
-        self.entities.iter_mut().find(|e| e.0 == id).unwrap().1.kill();
+        self.entities
+            .iter_mut()
+            .find(|e| e.0 == id)
+            .unwrap()
+            .1
+            .kill();
     }
 
     pub fn spawn(
@@ -290,18 +304,31 @@ impl<'e, 's: 'e> EntityManager<'e, 's> {
         self.emplace_entity(Box::new(ent))
     }
 
-    pub fn spawn_enemy(&mut self) -> usize {
-        // network this
-        unimplemented!()
-    }
+    // pub fn spawn_enemy(&mut self) -> usize {
+    //     // network this
+    //     unimplemented!()
+    // }
 
-    pub fn spawn_player<'a: 'e>(&mut self, rx: Receiver<KeyEvent>, ptx: Sender<Vec2>,  sock: &socket::Client) -> i32 {
+    pub fn spawn_player<'a: 'e>(
+        &mut self,
+        rx: Receiver<KeyEvent>,
+        ptx: Sender<Vec2>,
+        sock: &socket::Client,
+    ) -> i32 {
         let sprite = self.sprites[&SpriteName::Deer].clone();
         let pos = Vec2::new(1.0, 2.0);
         let scale = 4.0;
         let speed = 12.0;
         let dir = Vec2::default();
-        let base = BaseEntity::new(pos, scale, speed, 0.0, dir, Some(sprite), EntityKind::Player);
+        let base = BaseEntity::new(
+            pos,
+            scale,
+            speed,
+            0.0,
+            dir,
+            Some(sprite),
+            EntityKind::Player,
+        );
         let ent = Player::new(base, rx, ptx);
 
         let packet = EntitySpawn {
@@ -313,14 +340,14 @@ impl<'e, 's: 'e> EntityManager<'e, 's> {
             dir,
         };
         sock.send(packet).unwrap();
-        
+
         self.emplace_entity(Box::new(ent))
     }
 
-    pub fn spawn_projectile(&mut self) -> usize {
-        // network this
-        unimplemented!()
-    }
+    // pub fn spawn_projectile(&mut self) -> usize {
+    //     // network this
+    //     unimplemented!()
+    // }
 
     pub fn set_position(&mut self, id: i32, pos: Vec2) {
         if let Some((_, e)) = self.entities.iter_mut().find(|(eid, _)| *eid == id) {
@@ -344,10 +371,18 @@ impl<'e, 's: 'e> EntityManager<'e, 's> {
         // }
 
         // tick all alive entities
-        self.entities.iter_mut().filter(|e| e.1.is_alive()).for_each(|e| { e.1.tick(dt); });
+        self.entities
+            .iter_mut()
+            .filter(|e| e.1.is_alive())
+            .for_each(|e| {
+                e.1.tick(dt);
+            });
     }
 
     pub fn render(&self, shader: &Shader) {
-        self.entities.iter().filter(|e| e.1.is_alive()).for_each(|(_, e)| e.render(shader));
+        self.entities
+            .iter()
+            .filter(|e| e.1.is_alive())
+            .for_each(|(_, e)| e.render(shader));
     }
 }
