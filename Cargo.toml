@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 "engine-2d" = { path = "../engine-2d" }
+rand = "0.8.5"

@@ -1,0 +1,12 @@
+{
+    "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.procMacro.attributes.enable": false,
+    "rust-analyzer.procMacro.enable": false,
+    "rust-analyzer.procMacro.ignored": {
+        "deer-defense": [ "*" ],
+        "engine-2d": [ "*" ],
+        "rand": [ "*" ],
+        "*": [ "*" ]
+    },
+    "rust-analyzer.cargo.buildScripts.rebuildOnSave": false
+}

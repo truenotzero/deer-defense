@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["client"],
+            "args": ["server"],
             "cwd": "${workspaceFolder}"
         },
         {

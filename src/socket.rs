@@ -7,7 +7,6 @@ use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::net::UdpSocket;
 use std::sync::Arc;
-use std::sync::Weak;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -95,10 +94,10 @@ impl From<u8> for OpCode {
 }
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Packet {
-    opcode: u8,
-    data: Vec<u8>,
+    pub opcode: u8,
+    pub data: Vec<u8>,
 }
 
 pub struct NoData;
@@ -129,6 +128,10 @@ impl Packet {
 
     pub fn opcode<T: From<u8>>(&self) -> T {
         self.opcode.into()
+    }
+
+    pub fn data(self) -> Vec<u8> {
+        self.data
     }
 
     pub fn send_to(self, socket: &UdpSocket, address: Option<SocketAddr>) -> Result<()> {
@@ -212,16 +215,12 @@ impl Client {
 
 pub struct Server {
     socket: UdpSocket,
-    clients: Vec<Weak<Client>>,
 }
 
 impl Server {
     pub fn listen(port: u16) -> Result<Self> {
         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port))?;
-        Ok(Self {
-            socket,
-            clients: Default::default(),
-        })
+        Ok(Self { socket })
     }
 
     /// connectionless mode
@@ -259,7 +258,6 @@ impl Server {
                 sleep(Duration::from_millis(1));
                 client.send(Packet::new(OpCode::Hello, NoData))?;
 
-                self.clients.push(Arc::downgrade(&client));
                 println!("new client!");
                 break Ok(client);
             }

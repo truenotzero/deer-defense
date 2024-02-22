@@ -38,7 +38,6 @@ pub fn subscribe(e: Type, f: fn(&Data)) {
     EVENT_MANAGER.with_borrow_mut(|m| m.subscribe(e, f))
 }
 
-
 pub fn submit(e: Type, data: Data) -> Option<()> {
     EVENT_MANAGER.with_borrow(|m| m.submit(e, &data))
 }
