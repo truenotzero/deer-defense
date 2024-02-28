@@ -26,17 +26,17 @@ use engine_2d::render::shader::PartType;
 use engine_2d::render::shader::Shader;
 use engine_2d::render::shader::ShaderBuilder;
 use engine_2d::render::shader::ShaderPart;
-use engine_2d::render::window as glfw;
-use engine_2d::render::window::Action;
-use engine_2d::render::window::Key;
-use engine_2d::render::Context;
 use engine_2d::shader;
+use engine_2d::time::Cooldown;
+use engine_2d::time::Timer;
+use engine_2d::window::DrawContext;
+use engine_2d::window::Engine;
+use engine_2d::window::GameLoop;
+use engine_2d::window::WindowManager;
 use entities::EntityManager;
 use entities::KeyEvent;
 use socket::Client;
 use socket::Packet;
-use timer::Cooldown;
-use timer::Timer;
 
 use crate::common::EntitySpawn;
 use crate::common::EntityUpdate;
@@ -44,12 +44,10 @@ use crate::common::OpCode;
 
 mod common;
 mod entities;
-mod event;
 mod server;
 mod socket;
-mod timer;
 
-fn make_shader(ctx: Context<'_>) -> Shader<'_> {
+fn make_shader<'c>(ctx: &'c DrawContext) -> Shader<'c> {
     ShaderBuilder::new(ctx)
         .add_part(shader! {
             #type Vertex
@@ -91,43 +89,6 @@ fn make_shader(ctx: Context<'_>) -> Shader<'_> {
         .unwrap()
 }
 
-struct Window {
-    glfw: glfw::Glfw,
-    handle: glfw::PWindow,
-    event_queue: glfw::GlfwReceiver<(f64, glfw::WindowEvent)>,
-}
-
-impl Default for Window {
-    fn default() -> Self {
-        let default_width = 1200;
-        let default_height = 1200;
-        let default_title = "Deer Defense";
-
-        // hints
-
-        // actual creation
-        let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
-        let (mut handle, event_queue) = glfw
-            .create_window(
-                default_width,
-                default_height,
-                default_title,
-                glfw::WindowMode::Windowed,
-            )
-            .unwrap();
-
-        // window configuration
-        handle.set_key_polling(true);
-        glfw::Context::make_current(&mut handle.render_context());
-
-        Self {
-            glfw,
-            handle,
-            event_queue,
-        }
-    }
-}
-
 fn recv_loop(socket: Arc<Client>, tx: Sender<Packet>) {
     loop {
         if let Ok(msg) = socket.recv() {
@@ -142,35 +103,54 @@ fn recv_loop(socket: Arc<Client>, tx: Sender<Packet>) {
 // g is the lifetime of gl objects
 // c is the lifetime of the gl context
 // w is the lifetime of the window
-pub struct Engine<'c> {
-    wnd: Window,
-    ctx: render::Context<'c>,
-    sock: Arc<socket::Client>,
-    rx_packet: Receiver<Packet>,
-    server_to_local_id: HashMap<i32, i32>,
-    player_id: i32,
-
+pub struct Game<'e, 's: 'e> {
     ping_timer: Timer,
     player_pos_timer: Timer,
     timeout_timer: Timer,
     shot_cooldown: Cooldown,
+
+    prx: Receiver<Vec2>,
+    ktx: Sender<(bool, bool, bool, bool)>,
+
+    shader: Shader<'s>,
+    ents: EntityManager<'e, 's>,
+
+    sock: Arc<socket::Client>,
+    rx_packet: Receiver<Packet>,
+    server_to_local_id: HashMap<i32, i32>,
+    player_id: i32,
 }
 
-impl<'c> Engine<'c> {
-    fn new(mut wnd: Window, sock: Arc<socket::Client>) -> Self {
-        let ctx = render::init(|proc| wnd.handle.get_proc_address(proc));
-        let sock_ = sock.clone();
+impl<'e, 's: 'e, 'c: 's> GameLoop<'c> for Game<'e, 's> {
+    fn setup(ctx: &'c DrawContext, wm: &mut WindowManager) -> Self {
+        let sock = Arc::new(socket::Client::new().unwrap());
+        sock.connect((Ipv4Addr::LOCALHOST, 7777)).unwrap();
 
+        let sock_ = sock.clone();
         let (tx, rx) = mpsc::channel();
+        let (ptx, prx) = mpsc::channel();
+        let (ktx, krx) = mpsc::channel();
         thread::spawn(move || recv_loop(sock_, tx));
 
+        let mut ents = EntityManager::default();
+        ents.load_sprite(ctx, SpriteName::Tile, Path::new("tile.png"));
+        ents.load_sprite(ctx, SpriteName::Deer, Path::new("deer.png"));
+        ents.load_sprite(ctx, SpriteName::Forest, Path::new("pine.png"));
+        ents.load_sprite(ctx, SpriteName::Spit, Path::new("spit.png"));
+        ents.load_sprite(ctx, SpriteName::Hunter, Path::new("hunter.png"));
+        ents.create_forest();
+        let player_id = ents.spawn_player(krx, ptx, &sock);
+
+        let shader = make_shader(&ctx);
         Self {
-            wnd,
-            ctx,
+            ktx,
+            prx,
+            shader,
+            ents,
             sock,
             server_to_local_id: HashMap::new(),
             rx_packet: rx,
-            player_id: 0,
+            player_id,
             ping_timer: Timer::new(Duration::from_secs(1)),
             player_pos_timer: Timer::new(Duration::from_millis(50)),
             timeout_timer: Timer::new(TIMEOUT),
@@ -178,57 +158,7 @@ impl<'c> Engine<'c> {
         }
     }
 
-    fn run(&mut self) {
-        let mut ents = EntityManager::default();
-        ents.load_sprite(self.ctx, SpriteName::Tile, Path::new("tile.png"));
-        ents.load_sprite(self.ctx, SpriteName::Deer, Path::new("deer.png"));
-        ents.load_sprite(self.ctx, SpriteName::Forest, Path::new("pine.png"));
-        ents.load_sprite(self.ctx, SpriteName::Spit, Path::new("spit.png"));
-        ents.load_sprite(self.ctx, SpriteName::Hunter, Path::new("hunter.png"));
-
-        let (tx, rx) = mpsc::channel();
-        let (ptx, prx) = mpsc::channel();
-
-        ents.create_forest();
-        self.player_id = ents.spawn_player(rx, ptx, &self.sock);
-
-        let shader = make_shader(self.ctx);
-        let mut last = Instant::now();
-        while !self.wnd.handle.should_close() {
-            // update logic
-            self.wnd.glfw.poll_events();
-            for (_, event) in glfw::flush_messages(&self.wnd.event_queue) {
-                match event {
-                    glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
-                        self.wnd.handle.set_should_close(true);
-                    }
-                    _ => (),
-                }
-            }
-
-            let now = Instant::now();
-            let dt = now - last;
-            self.tick(&mut ents, &tx, &prx, dt);
-            last = now;
-
-            // draw logic
-            render::clear();
-            self.render(&ents, &shader);
-            glfw::Context::swap_buffers(&mut self.wnd.handle.render_context());
-        }
-    }
-
-    fn get_key(&self, key: Key) -> bool {
-        self.wnd.handle.get_key(key) == Action::Press
-    }
-
-    fn tick(
-        &mut self,
-        ents: &mut EntityManager,
-        tx: &Sender<KeyEvent>,
-        prx: &Receiver<Vec2>,
-        dt: Duration,
-    ) {
+    fn tick(&mut self, dt: Duration, wm: &mut WindowManager) {
         let dtf = dt.as_secs_f32();
 
         if self.ping_timer.tick(dt) {
@@ -258,7 +188,9 @@ impl<'c> Engine<'c> {
                             common::EntityKind::Enemy => SpriteName::Hunter,
                         };
 
-                        let lid = ents.spawn(e.pos, e.scale, e.speed, 0.0, e.dir, sprite, e.kind);
+                        let lid = self
+                            .ents
+                            .spawn(e.pos, e.scale, e.speed, 0.0, e.dir, sprite, e.kind);
                         self.server_to_local_id.insert(e.id, lid);
                         // println!("Spawning entity ({:?}) sid=[{}], lid=[{}]", e.kind, e.id, lid);
                     }
@@ -266,31 +198,33 @@ impl<'c> Engine<'c> {
                         let e = EntityUpdate::try_from(p).unwrap();
                         let lid = self.server_to_local_id[&e.id];
                         // ents.set_position(lid, e.pos);
-                        let d = e.pos - ents.get(lid).pos();
-                        ents.get_mut(lid).set_direction(d);
+                        let d = e.pos - self.ents.get(lid).pos();
+                        self.ents.get_mut(lid).set_direction(d);
                     }
                     OpCode::EntityDestroy => {
                         let e = EntityDestroy::try_from(p).unwrap();
                         // println!("client: entity destroy sid=[{}]", e.id);
                         let lid = self.server_to_local_id[&e.id];
-                        ents.destroy(lid);
+                        self.ents.destroy(lid);
                     } // _ => (),
                 }
             }
         }
+        /* TODO:
+                let w = self.get_key(Key::W);
+                let a = self.get_key(Key::A);
+                let s = self.get_key(Key::S);
+                let d = self.get_key(Key::D);
+                let space = self.get_key(Key::Space);
+                self.ktx.send((w, a, s, d)).unwrap();
+        */
+        let space = false;
 
-        let w = self.get_key(Key::W);
-        let a = self.get_key(Key::A);
-        let s = self.get_key(Key::S);
-        let d = self.get_key(Key::D);
-        let space = self.get_key(Key::Space);
-        tx.send((w, a, s, d)).unwrap();
-
-        ents.tick(dtf);
+        self.ents.tick(dtf);
 
         let send_player_pos = self.player_pos_timer.tick(dt);
 
-        let player_pos = prx.recv().unwrap();
+        let player_pos = self.prx.recv().unwrap();
         if send_player_pos {
             let p = EntityUpdate {
                 id: 0,
@@ -303,7 +237,7 @@ impl<'c> Engine<'c> {
             let up = Vec2::new(0.0, 1.0);
             let scale = 6.0;
             let speed = 30.0;
-            ents.spawn(
+            self.ents.spawn(
                 player_pos,
                 scale,
                 speed,
@@ -325,16 +259,28 @@ impl<'c> Engine<'c> {
         }
     }
 
-    fn render(&self, ents: &EntityManager, shader: &Shader) {
-        ents.render(shader);
+    fn draw(&mut self, ctx: &'c DrawContext, wm: &mut WindowManager) {
+        render::clear();
+        self.ents.render(&self.shader);
     }
 }
+
+/*
+impl Game {
+    fn get_key(&self, key: Key) -> bool {
+        self.wnd.handle.get_key(key) == Action::Press
+    }
+}
+*/
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
     let mut client_ip = Ipv4Addr::LOCALHOST;
     let default_port = 7777;
-    if args.len() > 1 {
+    let force_server = true;
+    if force_server {
+        thread::spawn(move || server::run(default_port));
+    } else if args.len() > 1 {
         match args[1].as_str() {
             "server" => {
                 thread::spawn(move || server::run(default_port));
@@ -343,10 +289,7 @@ fn main() {
         }
     }
 
-    let window = Window::default();
-    let sock = Arc::new(socket::Client::new().unwrap());
-    sock.connect((client_ip, default_port)).unwrap();
-    let mut game = Engine::new(window, sock);
-
-    game.run();
+    let window = WindowManager::new(1200, 1200, "Deer Defense");
+    let mut engine = Engine::new(window);
+    engine.run::<Game>();
 }

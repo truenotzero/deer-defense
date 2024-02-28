@@ -11,7 +11,7 @@ use engine_2d::render::sprite::ISprite;
 use engine_2d::render::sprite::Sprite;
 use engine_2d::render::texture::ITexture;
 use engine_2d::render::texture::Texture;
-use engine_2d::render::Context;
+use engine_2d::window::DrawContext;
 use rand::thread_rng;
 use rand::Rng;
 
@@ -186,7 +186,8 @@ impl<'a> Entity for Player<'a> {
     }
 
     fn tick(&mut self, dt: f32) -> bool {
-        let (w, a, s, d) = self.rx.recv().unwrap();
+        // let (w, a, s, d) = self.rx.recv().unwrap();
+        let (w, a, s, d) = (false, false, false, false);
 
         let up = (w as i32 as f32) * Vec2::new(0.0, 1.0);
         let left = (a as i32 as f32) * Vec2::new(-1.0, 0.0);
@@ -220,7 +221,7 @@ impl<'e, 's: 'e> EntityManager<'e, 's> {
             .map(|e| (e.0, e.1.as_ref()))
     }
 
-    pub fn load_sprite<'c: 's>(&mut self, ctx: Context<'c>, name: SpriteName, path: &Path) {
+    pub fn load_sprite<'c: 's>(&mut self, ctx: &'c DrawContext, name: SpriteName, path: &Path) {
         self.sprites.insert(
             name,
             Rc::new(Sprite::new(ctx, Texture::from_file(ctx, path).unwrap())),

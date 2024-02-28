@@ -99,14 +99,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ecs"
-version = "0.1.0"
-dependencies = [
- "itertools",
- "paste",
-]
-
-[[package]]
 name = "either"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -116,7 +108,6 @@ checksum = "11157ac094ffbdde99aa67b23417ebdd801842852b500e395a45a9c0aac03e4a"
 name = "engine-2d"
 version = "0.1.0"
 dependencies = [
- "ecs",
  "gl_generator",
  "glfw",
  "image",
@@ -202,9 +193,9 @@ dependencies = [
 
 [[package]]
 name = "glfw"
-version = "0.54.0"
+version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2c5cdd9262ab473ecc9b31a9c27e336dae555b5b136ec3b51dd949c4ab8f8bd"
+checksum = "2a310dfc7966e5340f5d0e314fa7eed8888f1cd3bfcaa433d35cbd32d430e50c"
 dependencies = [
  "bitflags",
  "objc",

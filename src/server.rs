@@ -21,6 +21,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use engine_2d::math::Vec2;
+use engine_2d::time::Timer;
 use rand::thread_rng;
 use rand::Rng;
 
@@ -38,7 +39,6 @@ use crate::socket::Error;
 use crate::socket::NoData;
 use crate::socket::Packet;
 use crate::socket::Server;
-use crate::timer::Timer;
 
 fn broadcast(
     packet: Packet,
